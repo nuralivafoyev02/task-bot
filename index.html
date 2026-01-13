@@ -3,106 +3,168 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Task Pro</title>
+    <title>Task Pro Max</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { background-color: var(--tg-theme-bg-color, #ffffff); color: var(--tg-theme-text-color, #000000); }
-        .shimmer { background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
-        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; color: #1e293b; }
+        .glass { background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.3); }
+        .active-tab { background: #2563eb; color: white; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3); }
+        .modal { display: none; position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); }
+        .modal.active { display: flex; animation: fadeIn 0.2s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .fab-btn { box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.4); }
     </style>
 </head>
-<body class="p-4 font-sans">
-    <div id="app" class="max-w-md mx-auto">
+<body class="pb-24">
+
+    <div class="p-6 pb-2">
         <div class="flex justify-between items-center mb-6">
-            <h1 class="text-2xl font-bold">Vazifalar</h1>
-            <select id="teamSelector" onchange="changeTeam()" class="bg-gray-100 p-1 rounded-lg text-sm font-semibold outline-none border-none">
-                <option>Yuklanmoqda...</option>
-            </select>
+            <div>
+                <h1 class="text-xs font-bold text-blue-600 uppercase tracking-widest mb-1">Mening Ishlarim</h1>
+                <h2 class="text-2xl font-extrabold tracking-tight">Dashboard</h2>
+            </div>
+            <div id="userAvatar" class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-500 to-indigo-600 border-2 border-white shadow-lg flex items-center justify-center text-white font-bold">U</div>
         </div>
 
-        <div id="taskList" class="space-y-3">
-            <div class="shimmer h-20 w-full rounded-2xl"></div>
-            <div class="shimmer h-20 w-full rounded-2xl"></div>
+        <div class="glass rounded-3xl p-4 mb-6 flex items-center justify-between shadow-sm">
+            <div class="flex items-center space-x-3">
+                <div class="bg-blue-100 p-2 rounded-xl text-blue-600">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 005.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                </div>
+                <select id="teamSelector" onchange="changeTeam()" class="bg-transparent font-bold text-sm outline-none w-32 truncate">
+                    <option>Yuklanmoqda...</option>
+                </select>
+            </div>
+            <button onclick="openModal('teamModal')" class="bg-white p-2 rounded-xl shadow-sm border border-gray-100 active:scale-90 transition-all">
+                <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <div id="taskList" class="px-6 space-y-4">
+        <div class="h-20 bg-gray-100 rounded-3xl animate-pulse"></div>
+        <div class="h-20 bg-gray-100 rounded-3xl animate-pulse"></div>
+    </div>
+
+    <button onclick="openModal('taskModal')" class="fab-btn fixed bottom-8 right-6 w-16 h-16 bg-blue-600 text-white rounded-3xl flex items-center justify-center transform transition-all active:scale-90 z-50">
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+    </button>
+
+    <div id="teamModal" class="modal items-center justify-center p-6">
+        <div class="bg-white rounded-[40px] p-8 w-full max-w-sm shadow-2xl">
+            <h3 class="text-xl font-bold mb-6">Yangi Jamoa Yaratish</h3>
+            <input type="text" id="newTeamName" placeholder="Jamoa nomi..." class="w-full bg-gray-50 p-4 rounded-2xl mb-6 outline-none border-2 border-transparent focus:border-blue-500 transition-all">
+            <div class="flex space-x-3">
+                <button onclick="closeModal('teamModal')" class="flex-1 p-4 rounded-2xl font-bold bg-gray-100">Bekor qilish</button>
+                <button onclick="createNewTeam()" class="flex-1 p-4 rounded-2xl font-bold bg-blue-600 text-white">Yaratish</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="taskModal" class="modal items-center justify-end">
+        <div class="bg-white rounded-t-[40px] p-8 w-full animate-slide-up shadow-2xl">
+            <h3 class="text-xl font-bold mb-6">Yangi Vazifa</h3>
+            <div class="space-y-4">
+                <input type="text" id="taskTitle" placeholder="Vazifa nima?" class="w-full bg-gray-50 p-4 rounded-2xl outline-none">
+                <select id="userSelector" class="w-full bg-gray-50 p-4 rounded-2xl outline-none">
+                    <option value="">Odam biriktirish...</option>
+                </select>
+                <button onclick="createNewTask()" class="w-full p-4 rounded-2xl font-bold bg-blue-600 text-white shadow-lg">Vazifani qo'shish</button>
+                <button onclick="closeModal('taskModal')" class="w-full p-4 text-gray-400 font-medium">Yopish</button>
+            </div>
         </div>
     </div>
 
     <script>
         const tg = window.Telegram.WebApp;
-        // O'zgaruvchi nomini o'zgartirdik, to'qnashuv bo'lmasligi uchun
         const _supabase = supabase.createClient('https://trybbxovootehqvaiydn.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRyeWJieG92b290ZWhxdmFpeWRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc2ODk1MTYsImV4cCI6MjA4MzI2NTUxNn0.szjMQBYb8_ZNMq8rZyowVPTgD2GYLNnWEvs7XlCHY1M');
 
-        let currentUserId;
-        let selectedTeamId;
+        let currentUserId, selectedTeamId;
+
+        // Open/Close Modal
+        function openModal(id) { document.getElementById(id).classList.add('active'); tg.HapticFeedback.impactOccurred('medium'); }
+        function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 
         async function init() {
-            tg.ready();
-            tg.expand();
+            tg.ready(); tg.expand();
+            const user = tg.initDataUnsafe.user;
+            if (!user) return;
 
-            try {
-                const tgUser = tg.initDataUnsafe.user;
-                if (!tgUser) {
-                    document.getElementById('taskList').innerHTML = "Iltimos, Telegram orqali kiring.";
-                    return;
-                }
+            // Avatar initial
+            document.getElementById('userAvatar').innerText = user.first_name[0];
 
-                // 1. Profilni olish
-                const { data: profile, error: pError } = await _supabase
-                    .from('profiles')
-                    .select('*')
-                    .eq('telegram_id', tgUser.id)
-                    .single();
-
-                if (pError || !profile) throw new Error("Profil topilmadi. Botga /start bosing.");
-
+            const { data: profile } = await _supabase.from('profiles').select('*').eq('telegram_id', user.id).single();
+            if (profile) {
                 currentUserId = profile.id;
-                
-                // 2. Jamoalarni yuklash
-                const { data: teams } = await _supabase
-                    .from('team_members')
-                    .select('teams(*)')
-                    .eq('user_id', currentUserId);
-
-                const selector = document.getElementById('teamSelector');
-                if (teams && teams.length > 0) {
-                    selector.innerHTML = teams.map(t => `<option value="${t.teams.id}" ${profile.current_team_id === t.teams.id ? 'selected' : ''}>${t.teams.name}</option>`).join('');
-                    selectedTeamId = profile.current_team_id || teams[0].teams.id;
-                    loadTasks();
-                } else {
-                    selector.innerHTML = "<option>Jamoa yo'q</option>";
-                    document.getElementById('taskList').innerHTML = "<p class='text-center text-gray-400'>Siz hali hech qanday jamoaga qo'shilmagansiz.</p>";
-                }
-
-            } catch (err) {
-                console.error(err);
-                document.getElementById('taskList').innerHTML = `<p class='text-red-500 text-center'>${err.message}</p>`;
+                await loadTeams(profile.current_team_id);
             }
         }
 
-        async function loadTasks() {
-            const { data: tasks } = await _supabase
-                .from('tasks')
-                .select('*, profiles!tasks_assigned_to_fkey(full_name)')
-                .eq('team_id', selectedTeamId)
-                .order('created_at', { ascending: false });
+        async function loadTeams(defId) {
+            const { data: teams } = await _supabase.from('team_members').select('teams(*)').eq('user_id', currentUserId);
+            const selector = document.getElementById('teamSelector');
+            if (teams && teams.length > 0) {
+                selector.innerHTML = teams.map(t => `<option value="${t.teams.id}" ${t.teams.id === defId ? 'selected' : ''}>${t.teams.name}</option>`).join('');
+                selectedTeamId = defId || teams[0].teams.id;
+                loadTasks();
+                loadTeamUsers();
+            }
+        }
 
+        async function createNewTeam() {
+            const name = document.getElementById('newTeamName').value;
+            if (!name) return;
+            
+            const { data: team } = await _supabase.from('teams').insert([{ name, created_by: currentUserId }]).select().single();
+            await _supabase.from('team_members').insert([{ team_id: team.id, user_id: currentUserId }]);
+            
+            closeModal('teamModal');
+            tg.HapticFeedback.notificationOccurred('success');
+            await loadTeams(team.id);
+        }
+
+        async function loadTeamUsers() {
+            const { data: members } = await _supabase.from('team_members').select('profiles(id, full_name, username)').eq('team_id', selectedTeamId);
+            const selector = document.getElementById('userSelector');
+            selector.innerHTML = `<option value="${currentUserId}">O'zimga</option>` + 
+                members.filter(m => m.profiles.id !== currentUserId).map(m => `<option value="${m.profiles.id}">${m.profiles.full_name}</option>`).join('');
+        }
+
+        async function createNewTask() {
+            const title = document.getElementById('taskTitle').value;
+            const assignedTo = document.getElementById('userSelector').value;
+            
+            if (!title || !assignedTo) return;
+
+            await _supabase.from('tasks').insert([{
+                title, team_id: selectedTeamId, assigned_to: assignedTo, created_by: currentUserId, status: 'todo'
+            }]);
+
+            closeModal('taskModal');
+            document.getElementById('taskTitle').value = '';
+            tg.HapticFeedback.notificationOccurred('success');
+            loadTasks();
+        }
+
+        async function loadTasks() {
+            const { data: tasks } = await _supabase.from('tasks').select('*, profiles!tasks_assigned_to_fkey(full_name)').eq('team_id', selectedTeamId).order('created_at', { ascending: false });
             const list = document.getElementById('taskList');
-            if (tasks && tasks.length > 0) {
-                list.innerHTML = tasks.map(t => `
-                    <div onclick="toggleStatus('${t.id}', '${t.status}')" class="bg-gray-50 p-4 rounded-2xl flex justify-between items-center border border-gray-100 active:scale-95 transition-transform">
-                        <div>
-                            <p class="font-bold ${t.status === 'done' ? 'line-through text-gray-400' : ''}">${t.title}</p>
-                            <p class="text-[10px] text-gray-400 font-medium">👤 ${t.profiles?.full_name || 'Noma\'lum'}</p>
+            list.innerHTML = tasks.length > 0 ? tasks.map(t => `
+                <div onclick="toggleStatus('${t.id}', '${t.status}')" class="glass rounded-[32px] p-5 flex items-center justify-between active:scale-95 transition-all shadow-sm">
+                    <div class="flex items-center space-x-4">
+                        <div class="w-12 h-12 rounded-2xl ${t.status === 'done' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'} flex items-center justify-center font-bold">
+                            ${t.status === 'done' ? '✓' : '•'}
                         </div>
-                        <div class="w-6 h-6 rounded-full border-2 ${t.status === 'done' ? 'bg-blue-500 border-blue-500' : 'border-gray-300'} flex items-center justify-center text-white text-xs">
-                            ${t.status === 'done' ? '✓' : ''}
+                        <div>
+                            <p class="font-bold text-sm ${t.status === 'done' ? 'line-through opacity-40' : ''}">${t.title}</p>
+                            <p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider italic">${t.profiles?.full_name}</p>
                         </div>
                     </div>
-                `).join('');
-            } else {
-                list.innerHTML = "<p class='text-center text-gray-400 mt-10 text-sm italic'>Vazifalar hozircha yo'q</p>";
-            }
+                </div>
+            `).join('') : '<p class="text-center text-gray-400 py-10">Vazifalar yo\'q</p>';
         }
 
         async function toggleStatus(id, current) {
@@ -116,6 +178,7 @@
             selectedTeamId = document.getElementById('teamSelector').value;
             await _supabase.from('profiles').update({ current_team_id: selectedTeamId }).eq('id', currentUserId);
             loadTasks();
+            loadTeamUsers();
         }
 
         init();
