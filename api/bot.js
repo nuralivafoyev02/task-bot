@@ -2,38 +2,33 @@ const { Telegraf, Markup } = require('telegraf');
 const { createClient } = require('@supabase/supabase-js');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
-// Admin huquqi bilan ishlash uchun service_role key ishlatiladi
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-const OWNER_ID = parseInt(process.env.OWNER_ID); // Sizning Telegram ID'ngiz
 
-// 1. /start - Ro'yxatdan o'tish va bildirishnoma
+const OWNER_ID = parseInt(process.env.OWNER_ID);
+const WEBAPP_URL = process.env.WEBAPP_URL;
+
+// Asosiy menyu tugmasi
+const mainMenu = Markup.keyboard([
+    [Markup.button.webApp('Vazifalarni boshqarish 📱', WEBAPP_URL)],
+    [Markup.button.callback('Yordam ❓', 'help')]
+]).resize();
+
+// 1. START - Ro'yxatdan o'tish va Ownerga xabar
 bot.start(async (ctx) => {
-    const { id, username, first_name, last_name } = ctx.from;
-    const fullName = `${first_name} ${last_name || ''}`.trim();
-
-    // Profilni tekshirish yoki yaratish
-    let { data: profile, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('telegram_id', id)
-        .single();
+    const { id, username, first_name } = ctx.from;
+    
+    let { data: profile } = await supabase.from('profiles').select('*').eq('telegram_id', id).single();
 
     if (!profile) {
+        const role = id === OWNER_ID ? 'owner' : 'user';
         const { data: newProfile } = await supabase
             .from('profiles')
-            .insert([{ 
-                telegram_id: id, 
-                username: username, 
-                full_name: fullName,
-                role: id === OWNER_ID ? 'owner' : 'user' 
-            }])
+            .insert([{ telegram_id: id, username, full_name: first_name, role }])
             .select().single();
         profile = newProfile;
 
-        // Ownerga (Sizga) xabar berish
         if (id !== OWNER_ID) {
-            await bot.telegram.sendMessage(OWNER_ID, 
-                `🆕 Yangi foydalanuvchi: ${fullName} (@${username})\nID: ${id}`,
+            bot.telegram.sendMessage(OWNER_ID, `🆕 Yangi user: ${first_name} (@${username})\nID: ${id}`, 
                 Markup.inlineKeyboard([
                     [Markup.button.callback('Admin qilish ⚡️', `make_admin_${id}`)],
                     [Markup.button.callback('Jamoaga qo\'shish 👥', `assign_team_${id}`)]
@@ -42,64 +37,72 @@ bot.start(async (ctx) => {
         }
     }
 
-    const welcomeMsg = profile.role === 'owner' 
-        ? "Salom Boss! Tizim nazorat ostida. 🫡" 
-        : `Xush kelibsiz, ${fullName}! Adminlar sizni jamoaga qo'shishini kuting.`;
-
-    ctx.reply(welcomeMsg, Markup.keyboard([
-        [Markup.button.webApp('Mini Appni ochish 📱', process.env.WEBAPP_URL)]
-    ]).resize());
+    ctx.reply(`Xush kelibsiz, ${profile.full_name}! Holatingiz: ${profile.role.toUpperCase()}`, mainMenu);
 });
 
-// 2. Admin tayinlash (Faqat Owner uchun)
+// 2. ADMIN TAYINLASH (Faqat Owner uchun)
 bot.action(/make_admin_(\d+)/, async (ctx) => {
-    if (ctx.from.id !== OWNER_ID) return ctx.answerCbQuery("Sizda huquq yo'q!");
-    
+    if (ctx.from.id !== OWNER_ID) return ctx.answerCbQuery("Taqiqlangan!");
     const targetId = ctx.match[1];
-    const { error } = await supabase
-        .from('profiles')
-        .update({ role: 'admin' })
-        .eq('telegram_id', targetId);
-
-    if (!error) {
-        ctx.answerCbQuery("Foydalanuvchi Admin qilindi!");
-        bot.telegram.sendMessage(targetId, "Siz ushbu botda Admin etib tayinlandingiz! 🛠");
-        ctx.editMessageText(`✅ @${ctx.callbackQuery.from.username} foydalanuvchini Admin qildi.`);
-    }
+    
+    await supabase.from('profiles').update({ role: 'admin' }).eq('telegram_id', targetId);
+    bot.telegram.sendMessage(targetId, "Tabriklaymiz! Siz Admin bo'ldingiz. Endi /newteam komandasini ishlata olasiz.");
+    ctx.editMessageText("✅ Foydalanuvchi Admin qilindi.");
 });
 
-// 3. Jamoaga qo'shish logikasi (Adminlar va Owner uchun)
+// 3. JAMOA YARATISH (/newteam Nomi)
+bot.command('newteam', async (ctx) => {
+    const { data: user } = await supabase.from('profiles').select('id, role').eq('telegram_id', ctx.from.id).single();
+    if (user.role === 'user') return ctx.reply("❌ Faqat Admin yoki Owner jamoa ochishi mumkin.");
+
+    const name = ctx.message.text.split(' ').slice(1).join(' ');
+    if (!name) return ctx.reply("⚠️ Format: /newteam Jamoa_Nomi");
+
+    const { data: team } = await supabase.from('teams').insert([{ name, created_by: user.id }]).select().single();
+    await supabase.from('team_members').insert([{ team_id: team.id, user_id: user.id }]);
+    
+    ctx.reply(`✅ "${name}" jamoasi yaratildi. Uni boshqarish uchun Mini Appga kiring.`, mainMenu);
+});
+
+// 4. JAMOA GA QO'SHISH (Inline buttons)
 bot.action(/assign_team_(\d+)/, async (ctx) => {
-    // Jamoalar ro'yxatini bazadan olish
     const { data: teams } = await supabase.from('teams').select('*');
-    const targetUserId = ctx.match[1];
-
-    if (!teams || teams.length === 0) {
-        return ctx.reply("Hali birorta ham jamoa yaratilmagan. Avval jamoa yarating.");
-    }
-
-    const buttons = teams.map(team => [
-        Markup.button.callback(team.name, `add_to_team_${team.id}_${targetUserId}`)
-    ]);
-
-    ctx.reply("Qaysi jamoaga qo'shish kerak?", Markup.inlineKeyboard(buttons));
+    const targetTgId = ctx.match[1];
+    
+    const buttons = teams.map(t => [Markup.button.callback(t.name, `add_to_team_${t.id}_${targetTgId}`)]);
+    ctx.reply("Jamoani tanlang:", Markup.inlineKeyboard(buttons));
 });
 
-// 4. Tanlangan jamoaga haqiqiy qo'shish
 bot.action(/add_to_team_(.+)_(\d+)/, async (ctx) => {
-    const teamId = ctx.match[1];
-    const targetTgId = ctx.match[2];
-
+    const [_, teamId, targetTgId] = ctx.match;
     const { data: user } = await supabase.from('profiles').select('id').eq('telegram_id', targetTgId).single();
     
-    const { error } = await supabase
-        .from('team_members')
-        .insert([{ team_id: teamId, user_id: user.id }]);
+    await supabase.from('team_members').insert([{ team_id: teamId, user_id: user.id }]);
+    bot.telegram.sendMessage(targetTgId, "Siz yangi jamoaga qo'shildingiz! Mini Appni tekshiring.");
+    ctx.editMessageText("✅ Jamoaga muvaffaqiyatli qo'shildi.");
+});
 
-    if (!error) {
-        ctx.answerCbQuery("Jamoaga qo'shildi!");
-        bot.telegram.sendMessage(targetTgId, "Siz yangi jamoaga qo'shildingiz! Mini App orqali vazifalarni ko'rishingiz mumkin.");
-    }
+// 5. VAZIFA YARATISH (/newtask @username Vazifa)
+bot.command('newtask', async (ctx) => {
+    const parts = ctx.message.text.split(' ');
+    if (parts.length < 3) return ctx.reply("⚠️ Format: /newtask @username Vazifa matni");
+
+    const targetUser = parts[1].replace('@', '');
+    const title = parts.slice(2).join(' ');
+
+    const { data: creator } = await supabase.from('profiles').select('id, current_team_id, role').eq('telegram_id', ctx.from.id).single();
+    if (creator.role === 'user') return ctx.reply("❌ Sizda vazifa yaratish huquqi yo'q.");
+    if (!creator.current_team_id) return ctx.reply("❌ Avval Mini Appda jamoani tanlang (Switch team).");
+
+    const { data: worker } = await supabase.from('profiles').select('id, telegram_id').eq('username', targetUser).single();
+    if (!worker) return ctx.reply("❌ Bunday foydalanuvchi botda yo'q.");
+
+    await supabase.from('tasks').insert([{
+        title, team_id: creator.current_team_id, assigned_to: worker.id, created_by: creator.id
+    }]);
+
+    ctx.reply("🚀 Vazifa yaratildi!", mainMenu);
+    bot.telegram.sendMessage(worker.telegram_id, `📩 Yangi vazifa: "${title}"\nKimdan: @${ctx.from.username}`);
 });
 
 module.exports = async (req, res) => {
@@ -107,6 +110,6 @@ module.exports = async (req, res) => {
         await bot.handleUpdate(req.body);
         res.status(200).send('OK');
     } else {
-        res.status(200).send('Bot ishlayapti...');
+        res.status(200).send('Bot Active');
     }
 };
