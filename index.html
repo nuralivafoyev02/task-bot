@@ -92,7 +92,7 @@
         const tg = window.Telegram.WebApp;
         const supabaseUrl = 'https://trybbxovootehqvaiydn.supabase.co';
         const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRyeWJieG92b290ZWhxdmFpeWRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc2ODk1MTYsImV4cCI6MjA4MzI2NTUxNn0.szjMQBYb8_ZNMq8rZyowVPTgD2GYLNnWEvs7XlCHY1M';
-        const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+        const _supabase = supabase.createClient(supabaseUrl, supabaseKey);
 
         let currentUserId = null;
         let selectedTeamId = null;
@@ -112,7 +112,7 @@
             }
 
             // Fetch Profile
-            const { data: profile } = await supabase.from('profiles').select('*').eq('telegram_id', user.id).single();
+            const { data: profile } = await _supabase.from('profiles').select('*').eq('telegram_id', user.id).single();
             if (profile) {
                 currentUserId = profile.id;
                 loadTeams(profile.current_team_id);
@@ -121,7 +121,7 @@
 
         // Load User's Teams
         async function loadTeams(defaultTeamId) {
-            const { data: teamData } = await supabase.from('team_members').select('teams(*)').eq('user_id', currentUserId);
+            const { data: teamData } = await _supabase.from('team_members').select('teams(*)').eq('user_id', currentUserId);
             const selector = document.getElementById('teamSelector');
             
             if (teamData && teamData.length > 0) {
@@ -135,14 +135,14 @@
         async function handleTeamChange() {
             selectedTeamId = document.getElementById('teamSelector').value;
             tg.HapticFeedback.impactOccurred('medium');
-            await supabase.from('profiles').update({ current_team_id: selectedTeamId }).eq('id', currentUserId);
+            await _supabase.from('profiles').update({ current_team_id: selectedTeamId }).eq('id', currentUserId);
             loadTasks();
         }
 
         // Load Tasks with slliiq UI
         async function loadTasks() {
             const listContainer = document.getElementById('taskList');
-            const { data: tasks, error } = await supabase
+            const { data: tasks, error } = await _supabase
                 .from('tasks')
                 .select('*, profiles!tasks_assigned_to_fkey(full_name)')
                 .eq('team_id', selectedTeamId)
@@ -174,7 +174,7 @@
             const newStatus = currentStatus === 'todo' ? 'done' : 'todo';
             tg.HapticFeedback.notificationOccurred(newStatus === 'done' ? 'success' : 'warning');
             
-            const { error } = await supabase.from('tasks').update({ status: newStatus }).eq('id', taskId);
+            const { error } = await _supabase.from('tasks').update({ status: newStatus }).eq('id', taskId);
             if (!error) loadTasks();
         }
 
