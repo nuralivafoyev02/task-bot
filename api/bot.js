@@ -10,7 +10,19 @@ const WEBAPP_URL = process.env.WEBAPP_URL;
 const bot = new Telegraf(BOT_TOKEN);
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// --- YORDAMCHI FUNKSIYALAR ---
+// ROLE CHECK MIDDLEWARE
+const requireRole = (roles = []) => async (ctx, next) => {
+    const { data: user, error } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('telegram_id', ctx.from.id)
+        .single();
+
+    if (error || !user || !roles.includes(user.role)) {
+        return ctx.reply("❌ Sizda bu amal uchun ruxsat yo‘q.");
+    }
+    return next();
+};
 
 // Har bir rol uchun maxsus tugmalar
 const getMenuByRole = (role) => {
@@ -74,20 +86,33 @@ bot.start(async (ctx) => {
 
 // --- OWNER EXCLUSIVE FEATURES ---
 
-// Foydalanuvchilar ro'yxatini ko'rish
-bot.hears('📊 Foydalanuvchilar', async (ctx) => {
-    if (ctx.from.id !== OWNER_ID) return;
-    
-    const { data: users, error } = await supabase.from('profiles').select('*').limit(20);
-    
-    if (users) {
-        let list = "👥 *Foydalanuvchilar ro'yxati:*\n\n";
+bot.hears(
+    '📊 Foydalanuvchilar',
+    requireRole(['owner']),
+    async (ctx) => {
+        const { data: users, error } = await supabase
+            .from('profiles')
+            .select('full_name, username, role')
+            .limit(30);
+
+        if (error) {
+            console.error(error);
+            return ctx.reply("⚠️ Xatolik yuz berdi.");
+        }
+
+        let text = "👥 *Foydalanuvchilar ro‘yxati:*\n\n";
         users.forEach(u => {
-            list += `${u.role === 'owner' ? '👑' : u.role === 'admin' ? '⚡️' : '👤'} ${u.full_name} - @${u.username}\n`;
+            const icon =
+                u.role === 'owner' ? '👑' :
+                u.role === 'admin' ? '⚡️' : '👤';
+
+            text += `${icon} ${u.full_name} — @${u.username}\n`;
         });
-        ctx.reply(list, { parse_mode: 'Markdown' });
+
+        ctx.reply(text, { parse_mode: 'Markdown' });
     }
-});
+);
+
 
 bot.command('users', async (ctx) => {
     if (ctx.from.id !== OWNER_ID) return;
@@ -98,7 +123,7 @@ bot.command('users', async (ctx) => {
 // --- ADMIN & OWNER FEATURES ---
 
 bot.hears('➕ Yangi vazifa', (ctx) => ctx.reply("Vazifa yaratish uchun: `/newtask @username Vazifa nomi`", { parse_mode: 'Markdown' }));
-bot.hears('👥 Jamoalarim', (ctx) => ctx.reply("Jamoalarni boshqarish uchun Mini Ilovaga kiring yoki `/newteam JamoaNomi` buyrug'idan foydalaning."));
+bot.hears('👥 Jamoalarim', (ctx) => ctx.reply("Jamoalarni boshqarish uchun Mini Ilovaga kiring yoki /newteam buyrug'idan foydalaning."));
 
 // --- OLD FUNCTIONS (SAQLAB QOLINGAN) ---
 
@@ -123,22 +148,92 @@ bot.command('newteam', async (ctx) => {
 });
 
 bot.command('newtask', async (ctx) => {
-    const parts = ctx.message.text.split(' ');
-    if (parts.length < 3) return ctx.reply("⚠️ Format: `/newtask @username Vazifa nomi`", { parse_mode: 'Markdown' });
-    const targetUsername = parts[1].replace('@', '');
-    const title = parts.slice(2).join(' ');
+    const { data: creator, error: creatorError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('telegram_id', ctx.from.id)
+        .single();
 
-    const { data: creator } = await supabase.from('profiles').select('*').eq('telegram_id', ctx.from.id).single();
-    if (creator.role === 'user') return ctx.reply("❌ Sizda huquq yo'q.");
-    const { data: worker } = await supabase.from('profiles').select('*').eq('username', targetUsername).single();
-    if (!worker) return ctx.reply("❌ Foydalanuvchi botda ro'yxatdan o'tmagan.");
+    if (creatorError || creator.role === 'user') {
+        return ctx.reply("❌ Sizda vazifa biriktirish huquqi yo‘q.");
+    }
 
-    await supabase.from('tasks').insert([{
-        title, team_id: creator.current_team_id, assigned_to: worker.id, created_by: creator.id
+    let worker;
+    let title;
+
+    // 🔹 1. REPLY ORQALI VAZIFA BERISH
+    if (ctx.message.reply_to_message) {
+        title = ctx.message.text.split(' ').slice(1).join(' ');
+
+        if (!title) {
+            return ctx.reply("⚠️ Vazifa nomini yozing.");
+        }
+
+        const targetTgId = ctx.message.reply_to_message.from.id;
+
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('telegram_id', targetTgId)
+            .single();
+
+        if (error || !data) {
+            return ctx.reply("❌ Foydalanuvchi botda ro‘yxatdan o‘tmagan.");
+        }
+
+        worker = data;
+    }
+
+    // 🔹 2. @USERNAME ORQALI
+    else {
+        const parts = ctx.message.text.split(' ');
+
+        if (parts.length < 3) {
+            return ctx.reply(
+                "⚠️ Format:\n/newtask @username Vazifa\n\nYoki user xabariga reply qiling",
+                { parse_mode: 'Markdown' }
+            );
+        }
+
+        const username = parts[1].replace('@', '');
+        title = parts.slice(2).join(' ');
+
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('username', username)
+            .single();
+
+        if (error || !data) {
+            return ctx.reply("❌ Username topilmadi yoki botda yo‘q.");
+        }
+
+        worker = data;
+    }
+
+    // 🔹 VAZIFANI SAQLASH
+    const { error: taskError } = await supabase.from('tasks').insert([{
+        title,
+        assigned_to: worker.id,
+        created_by: creator.id,
+        team_id: creator.current_team_id || null,
+        status: 'pending'
     }]);
-    ctx.reply("🚀 Vazifa yuborildi!");
-    bot.telegram.sendMessage(worker.telegram_id, `📝 **Yangi vazifa:** ${title}\n👤 **Kimdan:** @${ctx.from.username}`, { parse_mode: 'Markdown' });
+
+    if (taskError) {
+        console.error(taskError);
+        return ctx.reply("⚠️ Vazifa yaratishda xatolik.");
+    }
+
+    ctx.reply("✅ Vazifa muvaffaqiyatli biriktirildi!");
+
+    bot.telegram.sendMessage(
+        worker.telegram_id,
+        `📝 *Yangi vazifa:* ${title}\n👤 Kimdan: @${ctx.from.username || 'Admin'}`,
+        { parse_mode: 'Markdown' }
+    );
 });
+
 
 // Jamoaga qo'shish actions (Old kodingiz)
 bot.action(/assign_team_(\d+)/, async (ctx) => {
