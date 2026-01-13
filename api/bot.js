@@ -41,17 +41,74 @@ const getMenuByRole = (role) => {
 
 // Har bir rol uchun yozma yo'riqnoma
 const getHelpText = (role, name) => {
-    let text = `Salom, ${name}! Sizning darajangiz: *${role.toUpperCase()}*\n\n`;
-    
     if (role === 'user') {
-        text += "📖 *Buyruqlar:*\n/start - Menyuni yangilash\n/mytasks - Vazifalarimni ko'rish (Ilovada)";
-    } else if (role === 'admin') {
-        text += "🛠 *Admin buyruqlari:*\n/newtask - Vazifa biriktirish\n/newteam - Jamoa ochish\n/teams - Jamoalarni boshqarish";
-    } else if (role === 'owner') {
-        text += "👑 *Owner buyruqlari:*\n/users - Barcha foydalanuvchilar\n/newadmin - Admin tayinlash\n/alltasks - Barcha vazifalar nazorati";
+        return (
+`👋 Salom, ${name}!
+
+Siz *oddiy foydalanuvchi* sifatida tizimga kirdingiz.
+
+🧩 *Siz nimalarni qila olasiz?*
+• Sizga biriktirilgan vazifalarni ko‘rish
+• Vazifalar bo‘yicha ishlash
+• Mini Ilova orqali barcha vazifalarni boshqarish
+
+📌 *Mavjud buyruqlar:*
+/start — Menyuni yangilash
+/mytasks — Mening vazifalarim (Mini Ilovada)
+
+📱 *Mini Ilova* tugmasi orqali vazifalarni qulay boshqaring.
+`
+        );
     }
-    return text;
+
+    if (role === 'admin') {
+        return (
+`👋 Salom, ${name}!
+
+Siz *ADMIN* sifatida tizimga kirdingiz.
+
+🧩 *Siz nimalarni qila olasiz?*
+• Foydalanuvchilarga vazifa biriktirish
+• Jamoalar yaratish va boshqarish
+• Bot orqali task yaratish
+
+📌 *Mavjud buyruqlar:*
+/start — Menyuni yangilash
+/newtask — Vazifa biriktirish (@username yoki reply)
+/createtask — Reply orqali vazifa yaratish
+/newteam — Yangi jamoa ochish
+
+💡 Maslahat: vazifa berishda user xabariga reply qilish eng qulay usul.
+`
+        );
+    }
+
+    if (role === 'owner') {
+        return (
+`👑 Salom, ${name}!
+
+Siz *OWNER* sifatida tizimga kirdingiz — to‘liq nazorat sizda.
+
+🧩 *Siz nimalarni qila olasiz?*
+• Admin tayinlash
+• Barcha foydalanuvchilarni ko‘rish
+• Istalgan userga task yaratish
+• Tizimni to‘liq boshqarish
+
+📌 *Mavjud buyruqlar:*
+/start — Menyuni yangilash
+/users — Foydalanuvchilar ro‘yxati
+/newadmin — Reply orqali admin tayinlash
+/newtask — Vazifa biriktirish
+/createtask — Botdan task yaratish
+/newteam — Jamoa ochish
+
+⚙️ Sizda eng yuqori huquqlar mavjud.
+`
+        );
+    }
 };
+
 
 // --- BOT LOGIKASI ---
 
@@ -85,171 +142,131 @@ bot.start(async (ctx) => {
 });
 
 // --- OWNER EXCLUSIVE FEATURES ---
-
-bot.hears(
-    '📊 Foydalanuvchilar',
-    requireRole(['owner']),
-    async (ctx) => {
-        const { data: users, error } = await supabase
-            .from('profiles')
-            .select('full_name, username, role')
-            .limit(30);
-
-        if (error) {
-            console.error(error);
-            return ctx.reply("⚠️ Xatolik yuz berdi.");
+// ================================
+// OWNER: /newadmin (REPLY ORQALI)
+// ================================
+bot.command('newadmin', async (ctx) => {
+    try {
+        // 🔐 Faqat OWNER
+        if (ctx.from.id !== OWNER_ID) {
+            return ctx.reply("❌ Faqat Owner admin tayinlay oladi.");
         }
 
-        let text = "👥 *Foydalanuvchilar ro‘yxati:*\n\n";
-        users.forEach(u => {
-            const icon =
-                u.role === 'owner' ? '👑' :
-                u.role === 'admin' ? '⚡️' : '👤';
+        // ❗ Reply shart
+        if (!ctx.message.reply_to_message) {
+            return ctx.reply(
+                "⚠️ Admin qilmoqchi bo‘lgan foydalanuvchi xabariga reply qilib `/newadmin` yozing.",
+                { parse_mode: 'Markdown' }
+            );
+        }
 
-            text += `${icon} ${u.full_name} — @${u.username}\n`;
-        });
+        const targetTgId = ctx.message.reply_to_message.from.id;
 
-        ctx.reply(text, { parse_mode: 'Markdown' });
+        const { data: user, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('telegram_id', targetTgId)
+            .single();
+
+        if (error || !user) {
+            return ctx.reply("❌ Foydalanuvchi botda ro‘yxatdan o‘tmagan.");
+        }
+
+        if (user.role === 'admin') {
+            return ctx.reply("⚠️ Bu foydalanuvchi allaqachon Admin.");
+        }
+
+        if (user.role === 'owner') {
+            return ctx.reply("👑 Owner eng yuqori huquqqa ega.");
+        }
+
+        await supabase
+            .from('profiles')
+            .update({ role: 'admin' })
+            .eq('telegram_id', targetTgId);
+
+        ctx.reply("✅ Foydalanuvchi Admin qilindi!");
+        await bot.telegram.sendMessage(
+            targetTgId,
+            "🎉 Tabriklaymiz! Siz Admin etib tayinlandingiz."
+        );
+
+    } catch (err) {
+        console.error("NEWADMIN ERROR:", err);
+        ctx.reply("⚠️ Xatolik yuz berdi.");
     }
-);
-
-
-bot.command('users', async (ctx) => {
-    if (ctx.from.id !== OWNER_ID) return;
-    // Yuqoridagi mantiq bilan bir xil
-    ctx.reply("Foydalanuvchilar tugmasini bosing yoki yuqoridagi ro'yxatni ko'ring.");
 });
 
-// --- ADMIN & OWNER FEATURES ---
 
-bot.hears('➕ Yangi vazifa', (ctx) => ctx.reply("Vazifa yaratish uchun: `/newtask @username Vazifa nomi`", { parse_mode: 'Markdown' }));
-bot.hears('👥 Jamoalarim', (ctx) => ctx.reply("Jamoalarni boshqarish uchun Mini Ilovaga kiring yoki /newteam buyrug'idan foydalaning."));
-
-// --- OLD FUNCTIONS (SAQLAB QOLINGAN) ---
-
-bot.action(/make_admin_(\d+)/, async (ctx) => {
+// ==================================================
+// ADMIN / OWNER: BOTDAN TURIB TASK YARATISH (REPLY)
+// ==================================================
+bot.command('createtask', async (ctx) => {
     try {
-        if (ctx.from.id !== OWNER_ID) return ctx.answerCbQuery("Taqiqlangan!");
-        const targetId = ctx.match[1];
-        await supabase.from('profiles').update({ role: 'admin' }).eq('telegram_id', targetId);
-        bot.telegram.sendMessage(targetId, "🎉 Tabriklaymiz! Siz Admin bo'ldingiz.");
-        ctx.editMessageText("✅ Foydalanuvchi Admin qilindi.");
-    } catch (e) { console.error(e); }
-});
+        const { data: creator, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('telegram_id', ctx.from.id)
+            .single();
 
-bot.command('newteam', async (ctx) => {
-    const { data: user } = await supabase.from('profiles').select('id, role').eq('telegram_id', ctx.from.id).single();
-    if (user.role === 'user') return ctx.reply("❌ Faqat Adminlar jamoa ochishi mumkin.");
-    const name = ctx.message.text.split(' ').slice(1).join(' ');
-    if (!name) return ctx.reply("⚠️ Format: `/newteam JamoaNomi`", { parse_mode: 'Markdown' });
-    const { data: team } = await supabase.from('teams').insert([{ name, created_by: user.id }]).select().single();
-    await supabase.from('team_members').insert([{ team_id: team.id, user_id: user.id }]);
-    ctx.reply(`✅ **${name}** jamoasi yaratildi.`, { parse_mode: 'Markdown' });
-});
+        if (error || creator.role === 'user') {
+            return ctx.reply("❌ Sizda vazifa yaratish huquqi yo‘q.");
+        }
 
-bot.command('newtask', async (ctx) => {
-    const { data: creator, error: creatorError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('telegram_id', ctx.from.id)
-        .single();
+        if (!ctx.message.reply_to_message) {
+            return ctx.reply(
+                "⚠️ Vazifa beriladigan foydalanuvchi xabariga reply qilib:\n`/createtask Vazifa nomi`",
+                { parse_mode: 'Markdown' }
+            );
+        }
 
-    if (creatorError || creator.role === 'user') {
-        return ctx.reply("❌ Sizda vazifa biriktirish huquqi yo‘q.");
-    }
-
-    let worker;
-    let title;
-
-    // 🔹 1. REPLY ORQALI VAZIFA BERISH
-    if (ctx.message.reply_to_message) {
-        title = ctx.message.text.split(' ').slice(1).join(' ');
-
+        const title = ctx.message.text.split(' ').slice(1).join(' ');
         if (!title) {
             return ctx.reply("⚠️ Vazifa nomini yozing.");
         }
 
         const targetTgId = ctx.message.reply_to_message.from.id;
 
-        const { data, error } = await supabase
+        const { data: worker, error: workerError } = await supabase
             .from('profiles')
             .select('*')
             .eq('telegram_id', targetTgId)
             .single();
 
-        if (error || !data) {
+        if (workerError || !worker) {
             return ctx.reply("❌ Foydalanuvchi botda ro‘yxatdan o‘tmagan.");
         }
 
-        worker = data;
-    }
+        const { error: taskError } = await supabase
+            .from('tasks')
+            .insert([{
+                title,
+                assigned_to: worker.id,
+                created_by: creator.id,
+                team_id: creator.current_team_id || null,
+                status: 'pending'
+            }]);
 
-    // 🔹 2. @USERNAME ORQALI
-    else {
-        const parts = ctx.message.text.split(' ');
-
-        if (parts.length < 3) {
-            return ctx.reply(
-                "⚠️ Format:\n/newtask @username Vazifa\n\nYoki user xabariga reply qiling",
-                { parse_mode: 'Markdown' }
-            );
+        if (taskError) {
+            console.error(taskError);
+            return ctx.reply("⚠️ Vazifa yaratishda xatolik.");
         }
 
-        const username = parts[1].replace('@', '');
-        title = parts.slice(2).join(' ');
+        ctx.reply("✅ Vazifa muvaffaqiyatli yaratildi!");
 
-        const { data, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('username', username)
-            .single();
+        await bot.telegram.sendMessage(
+            worker.telegram_id,
+            `📝 *Yangi vazifa*\n\n📌 ${title}\n👤 Kimdan: @${ctx.from.username || 'Admin'}`,
+            { parse_mode: 'Markdown' }
+        );
 
-        if (error || !data) {
-            return ctx.reply("❌ Username topilmadi yoki botda yo‘q.");
-        }
-
-        worker = data;
+    } catch (err) {
+        console.error("CREATETASK ERROR:", err);
+        ctx.reply("⚠️ Xatolik yuz berdi.");
     }
-
-    // 🔹 VAZIFANI SAQLASH
-    const { error: taskError } = await supabase.from('tasks').insert([{
-        title,
-        assigned_to: worker.id,
-        created_by: creator.id,
-        team_id: creator.current_team_id || null,
-        status: 'pending'
-    }]);
-
-    if (taskError) {
-        console.error(taskError);
-        return ctx.reply("⚠️ Vazifa yaratishda xatolik.");
-    }
-
-    ctx.reply("✅ Vazifa muvaffaqiyatli biriktirildi!");
-
-    bot.telegram.sendMessage(
-        worker.telegram_id,
-        `📝 *Yangi vazifa:* ${title}\n👤 Kimdan: @${ctx.from.username || 'Admin'}`,
-        { parse_mode: 'Markdown' }
-    );
 });
 
 
-// Jamoaga qo'shish actions (Old kodingiz)
-bot.action(/assign_team_(\d+)/, async (ctx) => {
-    const { data: teams } = await supabase.from('teams').select('*');
-    const targetTgId = ctx.match[1];
-    const buttons = teams.map(t => [Markup.button.callback(`🔹 ${t.name}`, `add_to_team_${t.id}_${targetTgId}`)]);
-    ctx.reply("Qaysi jamoaga qo'shmoqchisiz?", Markup.inlineKeyboard(buttons));
-});
-
-bot.action(/add_to_team_(.+)_(\d+)/, async (ctx) => {
-    const [_, teamId, targetTgId] = ctx.match;
-    const { data: user } = await supabase.from('profiles').select('id').eq('telegram_id', targetTgId).single();
-    await supabase.from('team_members').upsert([{ team_id: teamId, user_id: user.id }], { onConflict: 'team_id, user_id' });
-    bot.telegram.sendMessage(targetTgId, "🎊 Sizni jamoaga qo'shishdi!");
-    ctx.editMessageText("✅ Muvaffaqiyatli qo'shildi.");
-});
 
 module.exports = async (req, res) => {
     if (req.method === 'POST') {
